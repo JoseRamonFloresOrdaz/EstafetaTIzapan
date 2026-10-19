@@ -10,15 +10,16 @@ from typing import Any, Callable, Optional, Union, get_args, get_origin, get_typ
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mappeo'))
 
 from PyQt6.QtCore import QDate, QDateTime, Qt, QTime
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDateEdit, QDateTimeEdit,
-    QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout,
+    QAbstractItemView, QApplication, QComboBox, QDateEdit, QDateTimeEdit,
+    QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
-    QSpinBox, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QTimeEdit,
+    QSpinBox, QStackedWidget, QTableWidget, QTableWidgetItem, QTimeEdit,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
+import estilo
 import modelos as m
 import repositorios as r
 
@@ -175,9 +176,12 @@ class DialogoFormulario(QDialog):
 
         accion = "Editar" if registro else "Nuevo"
         self.setWindowTitle(f"{accion} - {entidad.titulo}")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(480)
 
         form = QFormLayout()
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         hints = get_type_hints(entidad.modelo)
         for campo in fields(entidad.modelo):
             if campo.name == self._repo.COL_ID:
@@ -196,12 +200,28 @@ class DialogoFormulario(QDialog):
         )
         botones.accepted.connect(self._guardar)
         botones.rejected.connect(self.reject)
+        botones.button(QDialogButtonBox.StandardButton.Save).setText("Guardar")
+        botones.button(QDialogButtonBox.StandardButton.Save).setObjectName("primario")
+        botones.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
 
-        layout = QVBoxLayout(self)
+        titulo = QLabel(f"{accion} · {entidad.titulo}", objectName="titulo")
+        panel = estilo.PanelVidrio()
+        contenido = QVBoxLayout(panel)
+        contenido.setSpacing(14)
+        contenido.addWidget(titulo)
         if registro is not None:
-            layout.addWidget(QLabel(f"<b>{_etiqueta(self._repo.COL_ID)}:</b> {_id_de(registro)}"))
-        layout.addLayout(form)
-        layout.addWidget(botones)
+            contenido.addWidget(QLabel(
+                f"{_etiqueta(self._repo.COL_ID)}: {_id_de(registro)}", objectName="subtitulo"
+            ))
+        contenido.addLayout(form)
+        contenido.addSpacing(6)
+        contenido.addWidget(botones)
+
+        fondo = estilo.Fondo()
+        QVBoxLayout(fondo).addWidget(panel)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(fondo)
 
     # ---------- editores ----------
     def _crear_editor(self, nombre: str, tipo):
@@ -216,7 +236,7 @@ class DialogoFormulario(QDialog):
         if nombre == 'contraseña':
             return self._editor_contraseña()
         if base is bool:
-            caja = QCheckBox()
+            caja = estilo.Interruptor()
             caja.setChecked(nombre in ('activo', 'activa'))
             return caja, caja.isChecked, lambda v: caja.setChecked(bool(v))
         if base is float:
@@ -317,7 +337,7 @@ class DialogoFormulario(QDialog):
         contenedor = QWidget()
         fila = QHBoxLayout(contenedor)
         fila.setContentsMargins(0, 0, 0, 0)
-        asignada = QCheckBox("Asignar")
+        asignada = estilo.Interruptor()
         asignada.toggled.connect(editor.setEnabled)
         editor.setEnabled(False)
         fila.addWidget(asignada)
@@ -403,24 +423,40 @@ class PanelEntidad(QWidget):
         self._columnas = [f.name for f in fields(entidad.modelo)]
         self._registros = []
 
-        titulo = QLabel(f"<h2>{entidad.titulo}</h2>")
+        titulo = QLabel(entidad.titulo, objectName="titulo")
+        self._contador = QLabel(objectName="subtitulo")
+        encabezado = QVBoxLayout()
+        encabezado.setSpacing(0)
+        encabezado.addWidget(titulo)
+        encabezado.addWidget(self._contador)
 
-        self._buscar = QLineEdit()
-        self._buscar.setPlaceholderText("Buscar…")
+        self._buscar = QLineEdit(objectName="buscar")
+        self._buscar.setPlaceholderText("Buscar")
         self._buscar.setClearButtonEnabled(True)
+        self._buscar.setFixedWidth(240)
         self._buscar.textChanged.connect(self._filtrar)
 
         barra = QHBoxLayout()
-        barra.addWidget(self._buscar, 1)
-        for texto, accion in (
-            ("Nuevo", self.nuevo), ("Editar", self.editar),
-            ("Eliminar", self.eliminar), ("Refrescar", self.refrescar),
+        barra.setSpacing(8)
+        barra.addLayout(encabezado)
+        barra.addStretch(1)
+        barra.addWidget(self._buscar)
+        for texto, accion, nombre in (
+            ("Refrescar", self.refrescar, ""), ("Eliminar", self.eliminar, "peligro"),
+            ("Editar", self.editar, ""), ("Nuevo", self.nuevo, "primario"),
         ):
-            boton = QPushButton(texto)
+            boton = QPushButton(texto, objectName=nombre)
+            boton.setCursor(Qt.CursorShape.PointingHandCursor)
             boton.clicked.connect(accion)
             barra.addWidget(boton)
 
         self._tabla = QTableWidget(0, len(self._columnas))
+        self._tabla.setShowGrid(False)
+        self._tabla.setFrameShape(QFrame.Shape.NoFrame)
+        self._tabla.verticalHeader().setDefaultSectionSize(36)
+        self._tabla.horizontalHeader().setHighlightSections(False)
+        self._tabla.horizontalHeader().setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._tabla.setHorizontalHeaderLabels([_etiqueta(c) for c in self._columnas])
         self._tabla.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._tabla.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -433,7 +469,8 @@ class PanelEntidad(QWidget):
         self._tabla.doubleClicked.connect(self.editar)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(titulo)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
         layout.addLayout(barra)
         layout.addWidget(self._tabla)
 
@@ -442,7 +479,7 @@ class PanelEntidad(QWidget):
         resultado = {}
         for columna in self._columnas:
             modelo_rel = LLAVES_FORANEAS.get(columna)
-            if modelo_rel is None:
+            if modelo_rel is None or columna == self._repo.COL_ID:
                 continue
             describir = _POR_MODELO[modelo_rel].describir
             try:
@@ -482,7 +519,8 @@ class PanelEntidad(QWidget):
         self._tabla.setSortingEnabled(True)
         self._tabla.resizeColumnsToContents()
         self._filtrar(self._buscar.text())
-        self._ventana.estado(f"{self._entidad.titulo}: {len(self._registros)} registro(s)")
+        total = len(self._registros)
+        self._contador.setText(f"{total} registro{'s' if total != 1 else ''}")
 
     def _filtrar(self, texto: str):
         texto = texto.strip().lower()
@@ -546,45 +584,63 @@ class VentanaPrincipal(QMainWindow):
         self._ctx = ctx
         self._paneles = {}
         self.setWindowTitle(f"Estafeta - {ctx.nombre}")
-        self.resize(1100, 650)
+        self.resize(1200, 720)
 
         self._arbol = QTreeWidget()
         self._arbol.setHeaderHidden(True)
+        self._arbol.setRootIsDecorated(False)
+        self._arbol.setIndentation(0)
+        self._arbol.setItemsExpandable(False)
+        self._arbol.setCursor(Qt.CursorShape.PointingHandCursor)
+        fuente_grupo = self._arbol.font()
+        fuente_grupo.setPointSizeF(fuente_grupo.pointSizeF() * 0.85)
+        fuente_grupo.setBold(True)
         grupos = {}
         for entidad in ENTIDADES:
             if entidad.grupo not in grupos:
-                grupos[entidad.grupo] = QTreeWidgetItem(self._arbol, [entidad.grupo])
+                grupo = QTreeWidgetItem(self._arbol, [entidad.grupo.upper()])
+                grupo.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                grupo.setFont(0, fuente_grupo)
+                grupo.setForeground(0, estilo.QColor(110, 110, 115))
+                grupos[entidad.grupo] = grupo
             hoja = QTreeWidgetItem(grupos[entidad.grupo], [entidad.titulo])
             hoja.setData(0, Qt.ItemDataRole.UserRole, entidad)
         self._arbol.expandAll()
         self._arbol.currentItemChanged.connect(self._seleccionar)
 
+        self._estado = QLabel(objectName="estado")
+
+        lateral = estilo.PanelVidrio()
+        lateral.setFixedWidth(290)
+        columna = QVBoxLayout(lateral)
+        columna.setSpacing(10)
+        columna.addWidget(QLabel("Estafeta", objectName="marca"))
+        columna.addWidget(self._arbol, 1)
+        columna.addWidget(self._estado)
+
         self._pila = QStackedWidget()
         self._pila.addWidget(QLabel(
             "Seleccione una entidad en el menú de la izquierda.",
-            alignment=Qt.AlignmentFlag.AlignCenter,
+            alignment=Qt.AlignmentFlag.AlignCenter, objectName="vacio",
         ))
+        principal = estilo.PanelVidrio()
+        QVBoxLayout(principal).addWidget(self._pila)
 
-        divisor = QSplitter()
-        divisor.addWidget(self._arbol)
-        divisor.addWidget(self._pila)
-        divisor.setStretchFactor(1, 1)
-        divisor.setSizes([230, 870])
-        self.setCentralWidget(divisor)
+        fondo = estilo.Fondo()
+        fila = QHBoxLayout(fondo)
+        fila.setContentsMargins(10, 10, 10, 10)
+        fila.setSpacing(0)
+        fila.addWidget(lateral)
+        fila.addWidget(principal, 1)
+        self.setCentralWidget(fondo)
 
-        menu = self.menuBar().addMenu("&Archivo")
-        refrescar = QAction("Refrescar", self, shortcut=QKeySequence.StandardKey.Refresh)
-        refrescar.triggered.connect(self._refrescar_actual)
-        salir = QAction("Salir", self, shortcut=QKeySequence.StandardKey.Quit)
-        salir.triggered.connect(self.close)
-        menu.addAction(refrescar)
-        menu.addSeparator()
-        menu.addAction(salir)
+        QShortcut(QKeySequence.StandardKey.Refresh, self, self._refrescar_actual)
+        QShortcut(QKeySequence.StandardKey.Quit, self, self.close)
 
-        self.estado(f"Conectado a {ctx.nombre}")
+        self.estado(f"●  Conectado a {ctx.nombre}")
 
     def estado(self, mensaje: str):
-        self.statusBar().showMessage(mensaje)
+        self._estado.setText(mensaje)
 
     def _seleccionar(self, item, _anterior=None):
         entidad = item.data(0, Qt.ItemDataRole.UserRole) if item else None
@@ -613,7 +669,7 @@ def iniciar_ui(**conexiones) -> int:
     Si se proporciona mas de una, se pregunta con cual trabajar.
     """
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setStyle("Fusion")
+    estilo.aplicar(app)
 
     disponibles = {DIALECTOS[clave][0]: (cnx, DIALECTOS[clave][1]()) for clave, cnx in conexiones.items()}
     if not disponibles:
